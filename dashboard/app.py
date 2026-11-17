@@ -300,14 +300,46 @@ def get_connection():
     data_dir = Path("data/dashboard_exports")
     data_dir.mkdir(parents=True, exist_ok=True)
 
+    # Streamlit Cloud uses credentials stored in App Settings > Secrets.
+    # Local development can fall back to the AWS CLI profile.
     try:
         aws = st.secrets["aws"]
+    except (KeyError, FileNotFoundError):
+        aws = None
+
+    if aws is not None:
+        try:
+            access_key_id = aws["access_key_id"]
+            secret_access_key = aws["secret_access_key"]
+        except KeyError as exc:
+            raise RuntimeError(
+                "AWS secrets are incomplete. Add access_key_id and "
+                "secret_access_key under [aws] in Streamlit Secrets."
+            ) from exc
+
+        if not access_key_id or not secret_access_key:
+            raise RuntimeError(
+                "AWS secrets are empty. Check access_key_id and "
+                "secret_access_key under [aws] in Streamlit Secrets."
+            )
+
         session = boto3.Session(
-            aws_access_key_id=aws["access_key_id"],
-            aws_secret_access_key=aws["secret_access_key"],
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
             region_name=AWS_REGION,
         )
-    except Exception:
+    else:
+        credentials_file = Path.home() / ".aws" / "credentials"
+        config_file = Path.home() / ".aws" / "config"
+
+        if not credentials_file.exists() and not config_file.exists():
+            raise RuntimeError(
+                "AWS credentials were not found. In Streamlit Cloud, add "
+                "[aws] access_key_id and secret_access_key in Manage app > "
+                "Settings > Secrets. Locally, configure the "
+                "'mandi-pipeline' AWS CLI profile."
+            )
+
         session = boto3.Session(
             profile_name="mandi-pipeline",
             region_name=AWS_REGION,
