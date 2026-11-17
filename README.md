@@ -231,21 +231,16 @@ The project notes state that the Bronze, accepted Silver, and rejected Parquet a
 
 ## Repository structure
 
+The following is the repository structure currently tracked in GitHub:
+
 ```text
-indian-market-data-pipeline/
+mandi-data-quality-pipeline/
+├── .devcontainer/
+│   └── devcontainer.json
 ├── dashboard/
 │   └── app.py
-├── data/
-│   ├── raw/
-│   ├── bronze/
-│   ├── silver/
-│   ├── rejected/
-│   └── dashboard_exports/
 ├── docs/
-├── logs/
-├── reports/
-├── scripts/
-│   └── export_dashboard_data.py
+│   └── data_dictionary.md
 ├── sql/
 │   ├── 01_create_schemas.sql
 │   ├── 02_create_ops_tables.sql
@@ -258,21 +253,23 @@ indian-market-data-pipeline/
 │   └── 09_add_reconciliation_constraint.sql
 ├── src/
 │   └── mandi_pipeline/
+│       ├── __init__.py
 │       ├── extract.py
-│       ├── transform.py
 │       ├── load.py
+│       ├── pipeline.py
 │       ├── quality_checks.py
 │       ├── reconciliation.py
 │       ├── run_tracker.py
 │       ├── s3_storage.py
-│       └── pipeline.py
-├── tests/
+│       └── transform.py
 ├── .env.example
+├── .gitignore
+├── explore_data.py
 ├── requirements.txt
 └── README.md
 ```
 
-Generated data, local environments, logs, and credentials should remain out of version control.
+The `data/`, `logs/`, `reports/`, and local environment directories are runtime or local-workspace locations and are not currently listed as tracked repository folders. Generated data, local environments, logs, and credentials should remain out of version control.
 
 ## Local setup
 
@@ -306,7 +303,7 @@ DATABASE_URL=postgresql+psycopg2:///mandi_warehouse
 
 Adjust the URL for your PostgreSQL installation. Do not commit `.env`.
 
-Apply the SQL files in `sql/` in numeric order to the intended database. Before a full load, confirm that the target warehouse is empty. The full pipeline mode checks for an empty target warehouse and should not be run against a database that already contains the project data.
+Apply the SQL files in `sql/` in numeric order to the intended database. Before a full load, confirm that the target warehouse is empty. The full pipeline mode checks for an empty target warehouse and should not be run against a database that already contains the project data. The presence of migration files `08_add_dq_unique_constraint.sql` and `09_add_reconciliation_constraint.sql` in Git does not prove that they have been applied to your PostgreSQL database. Verify the constraints in the target database before running validation or reconciliation.
 
 ### 4. Place the source data
 
@@ -374,15 +371,9 @@ The resume mode uses the run ID and Bronze file configured in `pipeline.py`. Con
 
 ## Exporting dashboard data
 
-The dashboard expects the eight Parquet exports listed in the Dashboard data path section to exist under the S3 `dashboard/` prefix.
+The dashboard expects the eight Parquet exports listed in the Dashboard data path section to exist under the S3 `dashboard/` prefix. The current GitHub repository file list does not contain a `scripts/export_dashboard_data.py` utility, so this README does not claim that an export script is included.
 
-The repository includes:
-
-```text
-scripts/export_dashboard_data.py
-```
-
-Run the export utility according to its configured arguments and database connection, then verify that all eight expected objects exist under `s3://mandi-data-pipeline-vasudha/dashboard/`. The Streamlit app downloads these objects and queries them with DuckDB.
+Before deploying updated warehouse data, generate the eight exports using the export process available in your working environment and upload them to `s3://mandi-data-pipeline-vasudha/dashboard/`. Verify that all eight objects exist. The Streamlit app downloads these objects and queries them with DuckDB. Adding a version-controlled export utility is a recommended follow-up so this step can be reproduced from a fresh checkout.
 
 ## Running the dashboard locally
 
@@ -394,15 +385,9 @@ python -m streamlit run dashboard/app.py --server.port 8503
 
 Open the local URL printed by Streamlit.
 
-## Tests and syntax checks
+## Syntax checks
 
-Run the test suite:
-
-```bash
-PYTHONPATH=src pytest
-```
-
-Compile the pipeline modules:
+There is no `tests/` directory in the current repository listing, so an automated pytest suite is not documented as included. You can run Python syntax checks on the main modules:
 
 ```bash
 python -m py_compile src/mandi_pipeline/s3_storage.py
