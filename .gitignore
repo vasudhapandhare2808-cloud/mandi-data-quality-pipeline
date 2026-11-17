@@ -6,3 +6,10 @@ data/
 logs/
 .pytest_cache/
 .DS_Store
+# Generated reports and temporary Excel files
+reports/
+~$*.xlsx
+
+# Backups and skipped Excel reporting code
+*_backup.py
+src/mandi_pipeline/excel_report.py
