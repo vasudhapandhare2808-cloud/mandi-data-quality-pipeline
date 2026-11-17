@@ -1,10 +1,12 @@
 import os
+import re
+from pathlib import Path
 
+import boto3
+import duckdb
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
 
 
 # ============================================================
@@ -18,12 +20,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
+BUCKET_NAME = "mandi-data-pipeline-vasudha"
+AWS_REGION = "ap-south-1"
 
-if not DATABASE_URL:
-    st.error("DATABASE_URL is missing. Check your .env file.")
-    st.stop()
+TABLE_FILES = {
+    "gold.dim_date": "gold_dim_date.parquet",
+    "gold.dim_market": "gold_dim_market.parquet",
+    "gold.dim_commodity": "gold_dim_commodity.parquet",
+    "gold.fact_market_prices": "gold_fact_market_prices.parquet",
+    "ops.dq_results": "ops_dq_results.parquet",
+    "ops.pipeline_runs": "ops_pipeline_runs.parquet",
+    "ops.reconciliation": "ops_reconciliation.parquet",
+    "silver.rejected_records": "silver_rejected_records.parquet",
+}
 
 # Forest green + warm ivory visual system
 st.markdown(
@@ -287,15 +296,57 @@ st.markdown(
 # ============================================================
 
 @st.cache_resource
-def get_engine(database_url):
-    return create_engine(database_url, pool_pre_ping=True)
+def get_connection():
+    data_dir = Path("data/dashboard_exports")
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        aws = st.secrets["aws"]
+        session = boto3.Session(
+            aws_access_key_id=aws["access_key_id"],
+            aws_secret_access_key=aws["secret_access_key"],
+            region_name=AWS_REGION,
+        )
+    except Exception:
+        session = boto3.Session(
+            profile_name="mandi-pipeline",
+            region_name=AWS_REGION,
+        )
+
+    s3 = session.client("s3")
+
+    for filename in TABLE_FILES.values():
+        local_path = data_dir / filename
+        if not local_path.exists():
+            s3.download_file(
+                BUCKET_NAME,
+                f"dashboard/{filename}",
+                str(local_path),
+            )
+
+    connection = duckdb.connect(database=":memory:")
+
+    for table, filename in TABLE_FILES.items():
+        schema, table_name = table.split(".")
+        connection.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        file_path = (data_dir / filename).resolve().as_posix()
+        connection.execute(
+            f"CREATE VIEW {schema}.{table_name} AS "
+            f"SELECT * FROM read_parquet('{file_path}')"
+        )
+
+    return connection
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def run_query(query, params=None):
-    engine = get_engine(DATABASE_URL)
-    with engine.connect() as connection:
-        return pd.read_sql_query(text(query), connection, params=params or {})
+    connection = get_connection()
+    duckdb_query = re.sub(
+        r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)",
+        r"$\1",
+        query,
+    )
+    return connection.execute(duckdb_query, params or {}).df()
 
 
 def get_options(query, params=None):
